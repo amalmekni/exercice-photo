@@ -1,11 +1,19 @@
-# Exercice photo h?berg?
+# Exercice photo hébergé
 
-La page / informe le participant avant de demander la cam?ra. Oui d?clenche une seule capture et son envoi ? la galerie priv?e. Aucun son. Non annule avant le d?but de l?envoi.
+La page de participation affiche une mention courte de la prise et de l’envoi d’une photo, sans aperçu vidéo. Oui déclenche une seule capture après autorisation du navigateur. Aucun son. Non annule avant l’envoi.
 
-Galerie : /admin. Identifiant : admin. Le mot de passe ADMIN_PASSWORD est un secret Sites et une copie locale est conserv?e dans .env, exclu de Git et du d?ploiement. Les sessions expirent apr?s une heure. La d?connexion ou le changement de mot de passe les invalide.
+## Comptes administrateurs
 
-Cette version remplace Python par un Worker et conserve les nouvelles photos dans le stockage R2 priv?. Les anciennes photos locales ne sont pas transf?r?es. Maximum par photo : 2 Mo. La galerie refuse les envois lorsqu?elle contient d?j? 200 photos. Les contr?les de d?bit et de capacit? bas?s sur R2 ne constituent pas des quotas atomiques sous requ?tes simultan?es.
+Ouvrir `/admin`, puis « Créer mon compte administrateur ». Chaque personne choisit un identifiant de 3 à 32 caractères et un mot de passe de 12 à 128 caractères. Les identifiants sont normalisés en minuscules et réservés atomiquement pour éviter qu’une inscription concurrente écrase un compte. Les mots de passe sont dérivés avec PBKDF2-SHA256, 100 000 itérations et un sel aléatoire ; ils ne sont jamais stockés en clair.
 
-Construire avec npm run build ; v?rifier avec npm run validate et node scripts/check-api.mjs.
+Après connexion, le compte affiche son lien `/?organizer=<id>` à partager et sa galerie. Le serveur impose le propriétaire d’après la session, jamais d’après un identifiant fourni par le navigateur pour lire les photos. Les sessions expirent après une heure et sont supprimées à la déconnexion. Il n’y a pas de réinitialisation de mot de passe dans cette version.
 
-Stockage : photos/ pour les images ; sessions/ pour les sessions ; limits/ pour les compteurs. Effacer les objets photos/ pour supprimer les images. Ne jamais rendre le bucket public. Les sessions expir?es et les compteurs anciens peuvent ?tre effac?s p?riodiquement.
+L’ancien compte `admin` et les photos déjà reçues restent accessibles avec `ADMIN_PASSWORD`. Cet identifiant est réservé. Les nouveaux comptes n’utilisent pas ce secret. Sa copie locale `.env` reste exclue de Git et du déploiement.
+
+Cette version remplace Python par un Worker et conserve les données dans R2 privé. Les anciennes photos locales ne sont pas transférées. Maximum par photo : 2 Mo ; maximum de 200 photos par galerie. Les contrôles de débit et de capacité basés sur R2 ne constituent pas des quotas atomiques sous requêtes simultanées.
+
+Construire avec `npm run build` ; vérifier avec `npm run validate` et `node scripts/check-api.mjs`. Les tests utilisent un stockage simulé et vérifient notamment deux comptes, leurs liens, leurs connexions, les accès croisés refusés et la conservation de l’ancienne galerie. La caméra réelle et WebMCP restent à valider dans un navigateur compatible.
+
+Stockage : `photos/` pour l’ancienne galerie ; `admin-photos/<id>/` pour chaque nouvelle galerie ; `accounts/<username>` pour les identifiants et dérivés de mots de passe ; `organizers/<id>` pour les destinataires publics ; `sessions/` et `limits/` pour les sessions et compteurs. Ne jamais rendre le bucket public. Les sessions expirées et les compteurs anciens peuvent être effacés périodiquement.
+
+Les écritures conditionnelles et la dérivation des mots de passe suivent les API documentées par [Cloudflare R2](https://developers.cloudflare.com/r2/api/workers/workers-api-reference/) et [Web Crypto](https://developers.cloudflare.com/workers/runtime-apis/web-crypto/).

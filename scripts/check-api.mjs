@@ -5,7 +5,11 @@ const {default: worker} = await import(`data:text/javascript;base64,${Buffer.fro
 const storage = new Map();
 const BUCKET = {
   async get(key) { const value = storage.get(key); return value === undefined ? null : {body: value, json: async () => JSON.parse(value)}; },
-  async put(key, value) { storage.set(key, value); },
+  async put(key, value, options) {
+    if (options?.onlyIf instanceof Headers && options.onlyIf.get('If-None-Match') === '*' && storage.has(key)) return null;
+    storage.set(key, value);
+    return {key};
+  },
   async delete(key) { storage.delete(key); },
   async list({prefix, limit = 1000}) { const entries = [...storage.keys()].filter(key => key.startsWith(prefix)).sort(); return {objects: entries.slice(0, limit).map(key => ({key})), truncated: false}; },
 };
@@ -43,4 +47,67 @@ for (let i = 0; i < 12; i++) await call('/api/login', post('{}'));
 assert.equal((await call('/api/login', post('{}'))).status, 429);
 const failedStorage = {get: async () => {throw new Error('unavailable');}};
 assert.equal((await call('/api/photos', auth, {...env, BUCKET: failedStorage})).status, 503);
-console.log('Vérifications API réussies : consentement, stockage, authentification, accès privé, déconnexion et erreurs.');
+const registerAccount = (username, password, ip) => call('/api/register', post(JSON.stringify({username, password}), {'CF-Connecting-IP': ip}));
+assert.equal((await registerAccount('new-user', 'short', '192.0.2.2')).status, 400);
+assert.equal((await registerAccount('../bad', 'long-password-1234', '192.0.2.2')).status, 400);
+assert.equal((await registerAccount('admin', 'long-password-1234', '192.0.2.2')).status, 409);
+const alicePassword = 'alice-private-password';
+const aliceRegistration = await registerAccount(' Alice ', alicePassword, '192.0.2.3');
+assert.equal(aliceRegistration.status, 200);
+const alice = await aliceRegistration.json();
+assert.equal(alice.username, 'alice');
+assert.equal('hash' in alice, false);
+assert.equal('salt' in alice, false);
+const aliceAuth = {headers: {Cookie: aliceRegistration.headers.get('Set-Cookie').split(';')[0]}};
+const aliceId = new URL(alice.participationPath, origin).searchParams.get('organizer');
+assert.equal((await call('/api/organizer?organizer=' + aliceId)).status, 200);
+assert.equal((await call('/api/organizer?organizer=invalid')).status, 404);
+assert.equal((await call('/api/account')).status, 401);
+assert.equal((await call('/api/organizer?organizer=toString')).status, 404);
+assert.equal((await registerAccount('ALICE', 'another-private-password', '192.0.2.4')).status, 409);
+const savedAccount = JSON.parse(storage.get('accounts/alice'));
+assert.equal(savedAccount.username, 'alice');
+assert.equal(savedAccount.hash.includes(alicePassword), false);
+assert.equal(JSON.stringify(savedAccount).includes(alicePassword), false);
+assert.deepEqual(await (await call('/api/photos', aliceAuth)).json(), []);
+assert.equal((await call('/api/upload?organizer=not-valid', post(new Uint8Array([255,216,255,1,255,217]), uploadHeaders))).status, 404);
+assert.equal((await call('/api/upload?organizer=' + aliceId, post(new Uint8Array([255,216,255,1,255,217]), uploadHeaders))).status, 201);
+const alicePhotos = await (await call('/api/photos', aliceAuth)).json();
+assert.equal(alicePhotos.length, 1);
+assert.equal((await call(alicePhotos[0].url, aliceAuth)).status, 200);
+const bobRegistration = await registerAccount('bob', 'bob-private-password', '192.0.2.5');
+assert.equal(bobRegistration.status, 200);
+const bob = await bobRegistration.json();
+assert.notEqual(bob.participationPath, alice.participationPath);
+const bobAuth = {headers: {Cookie: bobRegistration.headers.get('Set-Cookie').split(';')[0]}};
+assert.deepEqual(await (await call('/api/photos', bobAuth)).json(), []);
+assert.deepEqual(await (await call('/api/photos?organizer=' + aliceId, bobAuth)).json(), []);
+assert.equal((await call(alicePhotos[0].url, bobAuth)).status, 404);
+assert.equal((await call(alicePhotos[0].url)).status, 401);
+const bobId = new URL(bob.participationPath, origin).searchParams.get('organizer');
+assert.equal((await call('/api/upload?organizer=' + bobId, post(new Uint8Array([255,216,255,1,255,217]), uploadHeaders))).status, 201);
+assert.equal((await (await call('/api/photos', bobAuth)).json()).length, 1);
+assert.equal((await (await call('/api/photos', aliceAuth)).json()).length, 1);
+const relogin = await call('/api/login', post(JSON.stringify({username: 'ALICE', password: alicePassword}), {'CF-Connecting-IP': '192.0.2.6'}));
+assert.equal(relogin.status, 200);
+assert.equal((await relogin.json()).username, 'alice');
+assert.equal((await call('/api/login', post(JSON.stringify({username: 'alice', password: 'wrong'}), {'CF-Connecting-IP': '192.0.2.6'}))).status, 401);
+const simultaneous = await Promise.all([
+  registerAccount('same-name', 'first-secure-password', '192.0.2.7'),
+  registerAccount('same-name', 'second-secure-password', '192.0.2.8'),
+]);
+assert.deepEqual(simultaneous.map(response => response.status).sort(), [200, 409]);
+const oldLogin = await call('/api/login', post(JSON.stringify({username: 'admin', password: env.ADMIN_PASSWORD}), {'CF-Connecting-IP': '192.0.2.9'}));
+const oldAuth = {headers: {Cookie: oldLogin.headers.get('Set-Cookie').split(';')[0]}};
+assert.equal((await (await call('/api/photos', oldAuth)).json()).length, 1);
+assert.equal((await call(alicePhotos[0].url, oldAuth)).status, 404);
+const accountWithoutLegacy = {...env, ADMIN_PASSWORD: undefined};
+assert.equal((await call('/api/photos', aliceAuth, accountWithoutLegacy)).status, 200);
+assert.equal((await call('/api/photos', oldAuth, accountWithoutLegacy)).status, 401);
+const sessionKey = [...storage.keys()].find(key => key.startsWith('sessions/') && JSON.parse(storage.get(key)).username === 'bob');
+const expired = JSON.parse(storage.get(sessionKey)); expired.expires = Date.now() - 1;
+storage.set(sessionKey, JSON.stringify(expired));
+assert.equal((await call('/api/photos', bobAuth)).status, 401);
+assert.equal((await call('/api/logout', {...post(''), headers: {...post('').headers, ...aliceAuth.headers}})).status, 200);
+assert.equal((await call('/api/photos', aliceAuth)).status, 401);
+console.log('API validée : inscription, identifiants distincts, mots de passe protégés, liens individuels, isolation des galeries, consentement et sessions.');

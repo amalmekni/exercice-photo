@@ -221,6 +221,15 @@ input:focus-visible { outline: 3px solid #7c3aed; outline-offset: 2px; }
 #gallery figure { margin: 0; }
 #gallery img { width: 100%; height: auto; border-radius: 12px; }
 #gallery figcaption { font-size: 0.875rem; overflow-wrap: anywhere; color: var(--muted); margin-top: 8px; }
+.registration-panel { margin-top: 28px; border-top: 1px solid var(--border); padding-top: 20px; }
+.registration-panel summary { font-weight: 700; cursor: pointer; color: var(--primary); padding: 8px 0; }
+.registration-panel summary:focus-visible { outline: 3px solid #7c3aed; outline-offset: 4px; }
+small { display: block; margin-top: 8px; font-size: 0.875rem; color: var(--muted); line-height: 1.5; }
+.share-panel { border: 1px solid var(--border); background: #f8fafc; padding: 18px; border-radius: 14px; }
+.share-panel .btn { margin-top: 12px; }
+.admin-actions { display: flex; gap: 12px; flex-wrap: wrap; margin-top: 18px; }
+a { color: var(--primary); text-underline-offset: 3px; }
+.status:empty, .error-message:empty { display: none; }
 
 @media (max-width: 620px) {
   .container {

@@ -9,6 +9,18 @@
   let stream = null;
   let generation = 0;
   const cameraSupported = window.isSecureContext && Boolean(navigator.mediaDevices?.getUserMedia);
+  const organizer = new URLSearchParams(window.location.search).get('organizer') || 'legacy';
+  let organizerReady = false;
+  async function loadOrganizer() {
+    try {
+      const response = await fetch('/api/organizer?organizer=' + encodeURIComponent(organizer));
+      if (!response.ok) throw new Error(response.status === 404 ? 'Lien de participation invalide. Demandez un nouveau lien à l’organisateur.' : 'Service indisponible. Rechargez la page plus tard.');
+      const account = await response.json();
+      document.getElementById('consentText').textContent = `Une photo sera prise et envoyée à la galerie privée de ${account.username}. Aucun son.`;
+      organizerReady = true;
+      enable.disabled = !cameraSupported;
+    } catch (failure) { error.textContent = failure.message; }
+  }
   function release() {
     if (stream) stream.getTracks().forEach(track => track.stop());
     stream = null;
@@ -18,7 +30,7 @@
     generation++;
     release();
     cancel.disabled = true;
-    enable.disabled = !cameraSupported;
+    enable.disabled = !cameraSupported || !organizerReady;
     status.textContent = 'Capture annulée';
     status.className = 'status status-idle';
   }
@@ -27,6 +39,7 @@
     error.textContent = 'Ouvrez cette page sur localhost ou en HTTPS dans un navigateur prenant en charge la caméra.';
   }
   enable.addEventListener('click', async () => {
+    if (!organizerReady || !cameraSupported) return;
     const id = ++generation;
     enable.disabled = true;
     cancel.disabled = false;
@@ -58,9 +71,9 @@
       if (!photo) throw new Error('La capture a échoué.');
       cancel.disabled = true;
       status.textContent = 'Envoi de la photo…';
-      const response = await fetch('/api/upload', {method: 'POST', headers: {'Content-Type': 'image/jpeg', 'X-Photo-Consent': 'yes'}, body: photo, signal: AbortSignal.timeout(30000)});
+      const response = await fetch('/api/upload?organizer=' + encodeURIComponent(organizer), {method: 'POST', headers: {'Content-Type': 'image/jpeg', 'X-Photo-Consent': 'yes'}, body: photo, signal: AbortSignal.timeout(30000)});
       if (!response.ok) throw new Error(({429: 'Trop de photos envoyées. Réessayez plus tard.', 507: 'La galerie est pleine. Contactez l’organisateur.', 413: 'La photo est trop volumineuse.'})[response.status] || 'Le serveur a refusé la photo. Réessayez plus tard.');
-      status.textContent = 'Photo reçue par l’organisateur. Caméra arrêtée.';
+      status.textContent = 'Photo envoyée.';
       status.className = 'status status-granted';
     } catch (failure) {
       if (id !== generation) return;
@@ -95,4 +108,5 @@
     window.addEventListener('pagehide', () => lifecycle.abort(), {once: true});
   }
   window.addEventListener('pagehide', () => { generation++; release(); });
+  loadOrganizer();
 })();
