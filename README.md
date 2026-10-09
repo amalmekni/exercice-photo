@@ -1,6 +1,6 @@
 # Exercice photo hébergé
 
-La page de participation affiche une mention courte de la prise et de l’envoi d’une photo, sans aperçu vidéo. Oui déclenche une seule capture après autorisation du navigateur. Aucun son. Non annule avant l’envoi.
+La page de participation affiche un bouton « Oui », sans paragraphe de consentement ni aperçu vidéo. Le clic ouvre d’abord une confirmation explicite de la prise et de l’envoi d’une photo à l’organisateur nommé. La caméra ne peut être demandée qu’après acceptation de cette confirmation. Une seule photo, aucun son. Non annule avant l’envoi.
 
 ## Comptes administrateurs
 

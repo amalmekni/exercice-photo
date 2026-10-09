@@ -11,12 +11,13 @@
   const cameraSupported = window.isSecureContext && Boolean(navigator.mediaDevices?.getUserMedia);
   const organizer = new URLSearchParams(window.location.search).get('organizer') || 'legacy';
   let organizerReady = false;
+  let organizerName = '';
   async function loadOrganizer() {
     try {
       const response = await fetch('/api/organizer?organizer=' + encodeURIComponent(organizer));
       if (!response.ok) throw new Error(response.status === 404 ? 'Lien de participation invalide. Demandez un nouveau lien à l’organisateur.' : 'Service indisponible. Rechargez la page plus tard.');
       const account = await response.json();
-      document.getElementById('consentText').textContent = `Une photo sera prise et envoyée à la galerie privée de ${account.username}. Aucun son.`;
+      organizerName = account.username;
       organizerReady = true;
       enable.disabled = !cameraSupported;
     } catch (failure) { error.textContent = failure.message; }
@@ -40,6 +41,8 @@
   }
   enable.addEventListener('click', async () => {
     if (!organizerReady || !cameraSupported) return;
+    const accepted = window.confirm(`Acceptez-vous qu’une photo soit prise avec votre caméra et envoyée à la galerie privée de ${organizerName} ? Aucun son ne sera enregistré.`);
+    if (!accepted) { cancelCapture(); return; }
     const id = ++generation;
     enable.disabled = true;
     cancel.disabled = false;
